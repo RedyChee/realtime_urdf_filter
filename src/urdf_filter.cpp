@@ -115,8 +115,8 @@ RealtimeURDFFilter::RealtimeURDFFilter (ros::NodeHandle &nh, int argc, char **ar
 
   // setup publishers and subscriber
   info_sub_ = nh_.subscribe("camera_info", 10, &RealtimeURDFFilter::cameraInfo_callback, this);
-	depth_mf_sub_.subscribe(nh_, "input_depth", 10);
-	tf2_filter_.registerCallback(boost::bind(&RealtimeURDFFilter::filter_callback, this,_1));
+  depth_mf_sub_.subscribe(nh_, "input_depth", 10);
+  tf2_filter_.registerCallback(boost::bind(&RealtimeURDFFilter::filter_callback, this,_1));
   depth_pub_ = image_transport_.advertiseCamera("output_depth", 10);
   mask_pub_ = image_transport_.advertiseCamera("output_mask", 10);
 
@@ -283,7 +283,6 @@ void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_d
   // convert to OpenCV cv::Mat
   cv_bridge::CvImageConstPtr orig_depth_img;
   cv::Mat depth_image;
-
   try {
     if(ros_depth_image->encoding == sensor_msgs::image_encodings::TYPE_32FC1)
     {
@@ -323,7 +322,7 @@ void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_d
     out_masked_depth.header = ros_depth_image->header;
     out_masked_depth.encoding = ros_depth_image->encoding;
     out_masked_depth.image = masked_depth_image;
-		sensor_msgs::Image depth = *(out_masked_depth.toImageMsg ());
+    sensor_msgs::Image depth = *(out_masked_depth.toImageMsg ());
     depth_pub_.publish (depth, camera_info_);
   }
 
@@ -334,8 +333,8 @@ void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_d
     out_mask.header = ros_depth_image->header;
     out_mask.encoding = sensor_msgs::image_encodings::MONO8;
     out_mask.image = mask_image;
-		sensor_msgs::Image mask = *(out_mask.toImageMsg ());
-		mask_pub_.publish (mask, camera_info_);
+    sensor_msgs::Image mask = *(out_mask.toImageMsg ());
+    mask_pub_.publish (mask, camera_info_);
   }
 }
 
