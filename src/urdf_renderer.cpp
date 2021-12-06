@@ -179,8 +179,6 @@ namespace realtime_urdf_filter
     {
       try
       {
-//        tf_.waitForTransform(fixed_frame_, (*it)->name, timestamp, ros::Duration(0.9));
-//        tf_.lookupTransform (fixed_frame_, timestamp, (*it)->name, ros::Time(0), "/world",t);
 				tf_.lookupTransform (fixed_frame_, (*it)->name, timestamp, t);
       }
       catch (tf::TransformException ex)

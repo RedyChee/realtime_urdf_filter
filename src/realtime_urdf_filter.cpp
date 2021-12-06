@@ -32,8 +32,6 @@
 #include "realtime_urdf_filter/urdf_renderer.h"
 
 #include <ros/node_handle.h>
-#include <chrono>
-#include <std_msgs/Float64.h>
 
 int main (int argc, char **argv)
 {

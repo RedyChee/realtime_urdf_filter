@@ -37,6 +37,7 @@
 #include <tf/transform_listener.h>
 
 #include <opencv2/opencv.hpp>
+#include <image_transport/image_transport.h>
 
 #include "realtime_urdf_filter/FrameBufferObject.h"
 #include "realtime_urdf_filter/shader_wrapper.h"
@@ -44,9 +45,9 @@
 
 #include <GL/freeglut.h>
 
-#include "message_filters/subscriber.h"
-#include "tf2_ros/message_filter.h"
-#include "tf2_ros/transform_listener.h"
+#include <message_filters/subscriber.h>
+#include <tf2_ros/message_filter.h>
+#include <tf2_ros/transform_listener.h>
 
 namespace realtime_urdf_filter
 {
@@ -66,11 +67,12 @@ class RealtimeURDFFilter
     // helper function to get current time
     double getTime ();
 
+    // callback fucntion that gets ROS image camera info
+    void cameraInfo_callback(const sensor_msgs::CameraInfo::ConstPtr& current_caminfo);
+
     // callback function that gets ROS images and does everything
     void filter_callback
          (const sensor_msgs::ImageConstPtr& ros_depth_image);
-
-		void cameraInfo(ros::Time timestamp = ros::Time());
 
     // does virtual rendering and filtering based on depth buffer and opengl proj. matrix
     void filter (
@@ -100,18 +102,17 @@ class RealtimeURDFFilter
     // ROS objects
     ros::NodeHandle nh_;
     tf::TransformListener tf_;
-
-		// add-ons
+    image_transport::ImageTransport image_transport_;
+    ros::Subscriber info_sub_;
     ros::Publisher realtime_filter_pub_;
-    ros::Publisher depth_pub_;
-    ros::Publisher mask_pub_;
-    ros::Publisher depth_info_pub_;
-    ros::Publisher mask_info_pub_;
+    image_transport::CameraPublisher depth_pub_;
+    image_transport::CameraPublisher mask_pub_;
+    
+    // subscribe camera_info separately because tf2_ros MessageFilter accepts one msg type
+    sensor_msgs::CameraInfo camera_info_;
     
   	// setup message filter
     std::string target_frame_;
-    sensor_msgs::CameraInfo camera_info;
-    
     tf2_ros::Buffer buffer_;
     tf2_ros::TransformListener tf2_;
     message_filters::Subscriber<sensor_msgs::Image> depth_mf_sub_;

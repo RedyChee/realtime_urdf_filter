@@ -31,13 +31,9 @@
 #include "realtime_urdf_filter/urdf_filter.h"
 
 #include <cv_bridge/cv_bridge.h>
+#include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
 #include <unordered_set>
-#include <ros/ros.h>
-#include <chrono>
-#include <std_msgs/Float64.h>
-#include <vector>
-#include <boost/array.hpp>
 
 // #define USE_OWN_CALIBRATION
 
@@ -46,6 +42,7 @@ using namespace realtime_urdf_filter;
 // constructor. sets up ros and reads in parameters
 RealtimeURDFFilter::RealtimeURDFFilter (ros::NodeHandle &nh, int argc, char **argv)
   : nh_(nh)
+  , image_transport_(nh)
   , fbo_initialized_(false)
   , depth_image_pbo_ (GL_INVALID_VALUE)
   , depth_texture_(GL_INVALID_VALUE)
@@ -117,16 +114,11 @@ RealtimeURDFFilter::RealtimeURDFFilter (ros::NodeHandle &nh, int argc, char **ar
   ROS_INFO ("using filter replace value %f", filter_replace_value_);
 
   // setup publishers and subscriber
+  info_sub_ = nh_.subscribe("camera_info", 10, &RealtimeURDFFilter::cameraInfo_callback, this);
 	depth_mf_sub_.subscribe(nh_, "input_depth", 10);
 	tf2_filter_.registerCallback(boost::bind(&RealtimeURDFFilter::filter_callback, this,_1));
-  depth_pub_ = nh_.advertise<sensor_msgs::Image>("output_depth", 10);
-  mask_pub_ = nh_.advertise<sensor_msgs::Image>("output_mask", 10);
-  depth_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>("/camera/depth_registered_filtered/image_rect/camera_info", 10);
-  mask_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>("/urdf_filtered_mask/camera_info", 10);
-  
-  realtime_filter_pub_ = nh_.advertise<std_msgs::Float64>("urdf_filter_time",1);
-
-}
+  depth_pub_ = image_transport_.advertiseCamera("output_depth", 10);
+  mask_pub_ = image_transport_.advertiseCamera("output_mask", 10);
 
 RealtimeURDFFilter::~RealtimeURDFFilter ()
 {
@@ -277,62 +269,20 @@ void RealtimeURDFFilter::filter (
   }
 }
 
-void RealtimeURDFFilter::cameraInfo(ros::Time timestamp)
+// callback fucntion that gets ROS image camera info
+void RealtimeURDFFilter::cameraInfo_callback(const sensor_msgs::CameraInfo::ConstPtr& caminfo)
 {
-	int h, w, roi_h, roi_w, bin_x, bin_y, roi_x, roi_y;
-	std::string model;
-	XmlRpc::XmlRpcValue d, k, r, p, roi;
-	bool roi_rect; 
-	
-	nh_.getParam ("height", h);
-	nh_.getParam ("width", w);
-	nh_.getParam ("distortion_model", model);
-	nh_.getParam ("D", d);
-	std::vector<double> D = {d[0], d[1], d[2], d[3], d[4]};
-	nh_.getParam ("K", k);
-	boost::array<double, 9> K = {k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7], k[8]};
-	nh_.getParam ("R", r);
-	boost::array<double, 9> R = {r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]};	
-	nh_.getParam ("P", p);
-	boost::array<double, 12> P = {p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11]};
-	nh_.getParam ("binning_x", bin_x);
-	nh_.getParam ("binning_y", bin_y);
-	nh_.getParam ("roi", roi);
-  roi_h = roi["height"];
-  roi_w = roi["width"];
-  roi_x = roi["x_offset"];
-  roi_y = roi["y_offset"];
-  roi_rect = roi["do_rectify"];
-  
-  camera_info.header.stamp = timestamp;
-  camera_info.height = h;
-  camera_info.width = w;
-  camera_info.distortion_model = model;
-  camera_info.D = D;
-  camera_info.K = K;
-  camera_info.R = R;
-  camera_info.P = P;
-  camera_info.binning_x = bin_x;
-  camera_info.binning_y = bin_y;
-  camera_info.roi.x_offset = roi_x;
-  camera_info.roi.y_offset = roi_y;
-  camera_info.roi.height = roi_h;
-  camera_info.roi.width = roi_w;
-  camera_info.roi.do_rectify = roi_rect;
-  
+	camera_info_ = *caminfo;
 }
 
 // callback function that gets ROS images and does everything
 void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_depth_image)
 {
-	cameraInfo(ros_depth_image->header.stamp);
-	
   // Debugging
   ROS_DEBUG_STREAM("Received image with camera info: "<<camera_info);
   // convert to OpenCV cv::Mat
   cv_bridge::CvImageConstPtr orig_depth_img;
   cv::Mat depth_image;
-  sensor_msgs::Image camera_transform;
 
   try {
     if(ros_depth_image->encoding == sensor_msgs::image_encodings::TYPE_32FC1)
@@ -357,15 +307,8 @@ void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_d
   double projection_matrix[16];
   getProjectionMatrix (projection_matrix);
 
-	// Measure time for robot filtering
-  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
   // Filter the image
   this->filter(buffer, projection_matrix, depth_image.cols, depth_image.rows, ros_depth_image->header.stamp);
-  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-
-  std_msgs::Float64 msg;
-  msg.data = (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) /1000000.0;
-  realtime_filter_pub_.publish(msg);
 
   // publish processed depth image and image mask
   if (depth_pub_.getNumSubscribers() > 0)
@@ -380,8 +323,8 @@ void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_d
     out_masked_depth.header = ros_depth_image->header;
     out_masked_depth.encoding = ros_depth_image->encoding;
     out_masked_depth.image = masked_depth_image;
-    depth_pub_.publish (out_masked_depth.toImageMsg ());
-    depth_info_pub_.publish(camera_info);
+		sensor_msgs::Image depth = *(out_masked_depth.toImageMsg ());
+    depth_pub_.publish (depth, camera_info_);
   }
 
   if (mask_pub_.getNumSubscribers() > 0)
@@ -391,8 +334,8 @@ void RealtimeURDFFilter::filter_callback(const sensor_msgs::ImageConstPtr& ros_d
     out_mask.header = ros_depth_image->header;
     out_mask.encoding = sensor_msgs::image_encodings::MONO8;
     out_mask.image = mask_image;
-    mask_pub_.publish (out_mask.toImageMsg ());
-    mask_info_pub_.publish(camera_info);
+		sensor_msgs::Image mask = *(out_mask.toImageMsg ());
+		mask_pub_.publish (mask, camera_info_);
   }
 }
 
@@ -525,13 +468,6 @@ void RealtimeURDFFilter::initFrameBufferObject ()
 // compute Projection matrix from CameraInfo message
 void RealtimeURDFFilter::getProjectionMatrix (double* glTf)
 {
-	XmlRpc::XmlRpcValue p;
-  if (!nh_.getParam ("P", p))
-  {
-    ROS_ASSERT (p.getType() == XmlRpc::XmlRpcValue::TypeArray && p.size() == 12 && "camera_info P parameter must be a 12-value array!");
-  }
-	double P[12] = {p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11]};
-
 #ifdef USE_OWN_CALIBRATION
   float P[12];
   P[0] = 585.260; P[1] = 0.0;     P[2]  = 317.387; P[3]  = 0.0;
@@ -543,15 +479,15 @@ void RealtimeURDFFilter::getProjectionMatrix (double* glTf)
   double cx = P[2];
   double cy = P[6];
 #else
-  double fx = P[0];
-  double fy = P[5];
-  double cx = P[2];
-  double cy = P[6];
+  double fx = camera_info_.P[0];
+  double fy = camera_info_.P[5];
+  double cx = camera_info_.P[2];
+  double cy = camera_info_.P[6];
 
   // TODO: check if this does the right thing with respect to registered depth / camera info
   // Add the camera's translation relative to the left camera (from P[3]);
-  camera_tx_ = -1 * (P[3] / fx);
-  camera_ty_ = -1 * (P[7] / fy);
+  camera_tx_ = -1 * (camera_info_.P[3] / fx);
+  camera_ty_ = -1 * (camera_info_.P[7] / fy);
 
 #endif
 
