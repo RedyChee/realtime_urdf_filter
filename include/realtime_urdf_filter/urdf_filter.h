@@ -54,8 +54,7 @@ namespace realtime_urdf_filter
 
 class RealtimeURDFFilter
 {
-  public:
-  	
+  public:	
     // constructor. sets up ros and reads in parameters
     RealtimeURDFFilter (ros::NodeHandle &nh, int argc, char **argv);
 
@@ -109,7 +108,7 @@ class RealtimeURDFFilter
     image_transport::CameraPublisher mask_pub_;
     
     // subscribe camera_info separately because tf2_ros MessageFilter accepts one msg type
-    sensor_msgs::CameraInfo camera_info_;
+    sensor_msgs::CameraInfo::ConstPtr camera_info_;
     
   	// setup message filter
     std::string target_frame_;
