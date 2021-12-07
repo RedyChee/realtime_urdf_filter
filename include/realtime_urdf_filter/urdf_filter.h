@@ -54,7 +54,7 @@ namespace realtime_urdf_filter
 
 class RealtimeURDFFilter
 {
-  public:	
+  public:
     // constructor. sets up ros and reads in parameters
     RealtimeURDFFilter (ros::NodeHandle &nh, int argc, char **argv);
 
